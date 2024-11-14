@@ -41,6 +41,7 @@ type stackOutput struct {
 	Change  string `json:"change" yaml:"change"`
 	Destroy string `json:"destroy" yaml:"destroy"`
 	TFver   string `json:"tfver" yaml:"tfver"`
+	Failure string `json:"failure" yaml:"failure"`
 }
 
 func init() {
@@ -90,6 +91,7 @@ func renderStatusTable(workerStatus map[int]string, plannedCount, errorCount, to
 func main() {
 	var cfg *config.Config
 	var stackOutputs []stackOutput
+	var errors []string // Collect error messages here
 	var err error
 
 	// Load configuration based on the provided flags
@@ -152,6 +154,7 @@ func main() {
 				if err != nil {
 					mu.Lock()
 					errorCount++
+					errors = append(errors, fmt.Sprintf("Project: %s, Error: %s", stack.Name, err.Error()))
 					mu.Unlock()
 
 					// Mark as errored with "N/A" fields
@@ -163,6 +166,7 @@ func main() {
 						Change:  "N/A",
 						Destroy: "N/A",
 						TFver:   "N/A",
+						Failure: "true",
 					}
 				} else {
 					// If no error, fill the stackOutput with actual data
@@ -174,6 +178,7 @@ func main() {
 						Change:  strconv.Itoa(response.Change),
 						Destroy: strconv.Itoa(response.Destroy),
 						TFver:   tfver,
+						Failure: "false",
 					}
 				}
 
@@ -199,6 +204,14 @@ func main() {
 	// Wait for all workers to complete
 	wg.Wait()
 
+	// Print errors if any
+	if len(errors) > 0 {
+		fmt.Println("\nEncountered Errors:")
+		for _, e := range errors {
+			fmt.Println(e)
+		}
+	}
+
 	// Sort final output alphabetically
 	sort.Slice(stackOutputs, func(i, j int) bool {
 		return stackOutputs[i].Name < stackOutputs[j].Name
@@ -216,17 +229,19 @@ func main() {
 }
 
 func tableWriter(stackOutputs []stackOutput) {
-	columns := []string{"STACK-NAME", "DRIFT", "ADD", "CHANGE", "DESTROY", "PATH", "TF-VERSION"}
+	columns := []string{"STACK-NAME", "DRIFT", "ADD", "CHANGE", "DESTROY", "PATH", "TF-VERSION", "FAILURE"}
 	var data [][]string
 
 	for _, stackOutput := range stackOutputs {
-		row := []string{stackOutput.Name,
+		row := []string{
+			stackOutput.Name,
 			stackOutput.Drift,
 			stackOutput.Add,
 			stackOutput.Change,
 			stackOutput.Destroy,
 			stackOutput.Path,
 			stackOutput.TFver,
+			stackOutput.Failure,
 		}
 		data = append(data, row)
 	}
